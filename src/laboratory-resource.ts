@@ -1,9 +1,9 @@
-import { getGlobalStore, openmrsFetch, restBaseUrl, useConfig } from '@openmrs/esm-framework';
-import { FulfillerStatus, GroupedOrders } from './types';
+import { openmrsFetch, restBaseUrl, useConfig } from '@openmrs/esm-framework';
 import { Order } from '@openmrs/esm-patient-common-lib';
-import useSWR from 'swr';
 import { useMemo } from 'react';
-import dayjs from 'dayjs';
+import useSWR from 'swr';
+import { useSessionStorage } from './hooks/use-session-storage';
+import { FulfillerStatus, GroupedOrders } from './types';
 
 /**
  * Custom hook for retrieving laboratory orders based on the specified status.
@@ -11,7 +11,8 @@ import dayjs from 'dayjs';
  * @param status - The status of the orders to retrieve
  * @param excludeCanceled - Whether to exclude canceled, discontinued and expired orders
  */
-export function useLabOrders(status: 'NEW' | FulfillerStatus = null, excludeCanceled = true, dateRange?: Date[]) {
+export function useLabOrders(status: 'NEW' | FulfillerStatus = null, excludeCanceled = true) {
+  const [dateRange] = useSessionStorage<Array<Date>>('lab-orders-date-range');
   const { laboratoryOrderTypeUuid } = useConfig();
   const fulfillerStatus = useMemo(() => (status === 'NEW' ? null : status), [status]);
   const newOrdersOnly = status === 'NEW';
@@ -19,11 +20,10 @@ export function useLabOrders(status: 'NEW' | FulfillerStatus = null, excludeCanc
   url = fulfillerStatus ? url + `&fulfillerStatus=${fulfillerStatus}` : url;
   url = excludeCanceled ? `${url}&excludeCanceledAndExpired=true&excludeDiscontinueOrders=true` : url;
   // The usage of SWR's mutator seems to only suffice for cases where we don't apply a status filter
-  url = dateRange
-    ? `${url}&=&activatedOnOrAfterDate=${dateRange.at(0).toISOString()}&activatedOnOrBeforeDate=${dateRange
-        .at(1)
-        .toISOString()}`
-    : url;
+  url =
+    Array.isArray(dateRange) && dateRange.length === 2 && dateRange[0] instanceof Date && dateRange[1] instanceof Date
+      ? `${url}&activatedOnOrAfterDate=${dateRange[0].toISOString()}&activatedOnOrBeforeDate=${dateRange[1].toISOString()}`
+      : url;
 
   const { data, error, mutate, isLoading, isValidating } = useSWR<{
     data: { results: Array<Order> };
@@ -84,7 +84,3 @@ export function rejectLabOrder(orderId: string, comment: string, abortController
     },
   });
 }
-
-export const labDateRange = getGlobalStore<{ dateRange: Date[] }>('lab-date-range', {
-  dateRange: [dayjs().startOf('day').toDate(), new Date()],
-});
